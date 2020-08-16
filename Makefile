@@ -19,6 +19,10 @@ $(IMG) : $(OUTPUT_DIR)/ipl.bin $(OUTPUT_DIR)/haribote.sys Makefile
 	mformat -f 1440 -C -B $< -i $@ ::
 	mcopy $(OUTPUT_DIR)/haribote.sys -i $@ ::
 
+all :
+	make clean
+	make run
+
 asm :
 	make $(OUTPUT_DIR)/ipl.bin
 
