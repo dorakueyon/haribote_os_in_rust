@@ -52,6 +52,11 @@ pub struct Screen {
     pub scrnx: i16,
     pub scrny: i16,
     pub vram: &'static mut u8,
+    pub mouse: [[Color; MOUSE_CURSOR_WIDTH]; MOUSE_CURSOR_HEIGHT],
+}
+
+const MOUSE_CURSOR_WIDTH: usize = 16;
+const MOUSE_CURSOR_HEIGHT: usize = 16;
 
 impl Screen {
     //  SCRNX	EQU		0x0ff4
@@ -62,12 +67,21 @@ impl Screen {
             scrnx: unsafe { *(0x0ff4 as *const i16)},
             scrny: unsafe { *(0x0ff6 as *const i16)},
             vram: unsafe { &mut *( *(0x0ff8 as *const i32) as *mut u8) },
+            mouse: [[Color::DarkCyan; MOUSE_CURSOR_WIDTH]; MOUSE_CURSOR_HEIGHT],
         }
     }
     
     pub fn init(&mut self) {
         self.init_pallet();
         self.init_screen();
+        self.init_mouse_cursor();
+        self.putblock(
+            self.mouse,
+            MOUSE_CURSOR_WIDTH as isize,
+            MOUSE_CURSOR_HEIGHT as isize,
+            (self.scrnx as isize - MOUSE_CURSOR_WIDTH as isize) / 2,
+            (self.scrny as isize - MOUSE_CURSOR_HEIGHT as isize - 28) /2,
+        )
     }
 
     pub fn init_pallet(&self) {
@@ -128,6 +142,53 @@ impl Screen {
             }
         }
     }
+    fn init_mouse_cursor(&mut self) {
+        let cursor: [[u8; MOUSE_CURSOR_WIDTH]; MOUSE_CURSOR_HEIGHT] = [
+            *b"**************..",
+            *b"*OOOOOOOOOOO*...",
+            *b"*OOOOOOOOOO*....",
+            *b"*OOOOOOOOO*.....",
+            *b"*OOOOOOOO*......",
+            *b"*OOOOOOO*.......",
+            *b"*OOOOOOO*.......",
+            *b"*OOOOOOOO*......",
+            *b"*OOOO**OOO*.....",
+            *b"*OOO*..*OOO*....",
+            *b"*OO*....*OOO*...",
+            *b"*O*......*OOO*..",
+            *b"**........*OOO*.",
+            *b"*..........*OOO*",
+            *b"............*OO*",
+            *b".............***",
+        ];
+        
+        for y in 0..MOUSE_CURSOR_HEIGHT {
+            for x in 0..MOUSE_CURSOR_WIDTH {
+                match cursor[y][x] {
+                    b'*' => self.mouse[y][x] = Color::DarkRed,
+                    b'O' => self.mouse[y][x] = Color::White,
+                    _ => (),
+                }
+            }
+        }
+    }
+
+    fn putblock(
+        &mut self,
+        image: [[Color; 16]; 16],
+        pxsize: isize,
+        pysize: isize,
+        px0: isize,
+        py0: isize,
+    ) {
+        for y in 0..pysize {
+            for x in 0..pxsize {
+                let ptr = unsafe {
+                    &mut *((self.vram as *mut u8)
+                            .offset((py0 + y) * (self.scrnx as isize) + (px0 + x)))
+                };
+                *ptr = image[y as usize][x as usize] as u8;
+            }
         }
     }
 }
