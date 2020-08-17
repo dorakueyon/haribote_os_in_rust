@@ -1,4 +1,7 @@
+use core::fmt;
+
 use crate::asm;
+use crate::fonts::{FONTS, FONT_HEIGHT, FONT_WIDTH};
 
 const COLOR_PALETTE: [[u8; 3]; 16] = [
 	[0x00, 0x00, 0x00],	/*  0:黒 */
@@ -19,27 +22,7 @@ const COLOR_PALETTE: [[u8; 3]; 16] = [
 	[0x84, 0x84, 0x84]	/* 15:暗い灰色 */
 ];
 
-pub fn set_palette() {
-    let eflags = asm::load_eflags();
-    asm::cli();
-    asm::out8(0x03c8, 0);
-    for i in 0..16 {
-        asm::out8(0x03c9, COLOR_PALETTE[i][0] / 4);
-        asm::out8(0x03c9, COLOR_PALETTE[i][0] / 4);
-        asm::out8(0x03c9, COLOR_PALETTE[i][0] / 4);
-    }
-    asm::store_eflags(eflags);
-}
 
-pub fn boxfill8(ptr: *mut u8, offset: isize, color: Color, x0: isize, y0: isize, x1: isize, y1: isize) {
-    for y in y0..=y1 {
-        for x in x0..=x1 {
-            let ptr = unsafe { &mut *(ptr.offset(y * offset + x))} ;
-            *ptr = color as u8;
-        }
-    }
-
-}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,3 +46,146 @@ pub enum Color {
     DarkCyan = 14,
     DarkGray = 15,
 }
+
+#[derive(Debug)]
+pub struct Screen {
+    pub scrnx: i16,
+    pub scrny: i16,
+    pub vram: &'static mut u8,
+
+impl Screen {
+    //  SCRNX	EQU		0x0ff4
+    //  SCRNY	EQU		0x0ff6
+    //  VRAM	EQU		0x0ff8
+    pub fn new() -> Screen {
+        Screen {
+            scrnx: unsafe { *(0x0ff4 as *const i16)},
+            scrny: unsafe { *(0x0ff6 as *const i16)},
+            vram: unsafe { &mut *( *(0x0ff8 as *const i32) as *mut u8) },
+        }
+    }
+    
+    pub fn init(&mut self) {
+        self.init_pallet();
+        self.init_screen();
+    }
+
+    pub fn init_pallet(&self) {
+        let eflags = asm::load_eflags();
+        asm::cli();
+        asm::out8(0x03c8, 0);
+        for i in 0..16 {
+            asm::out8(0x03c9, COLOR_PALETTE[i][0] / 4);
+            asm::out8(0x03c9, COLOR_PALETTE[i][0] / 4);
+            asm::out8(0x03c9, COLOR_PALETTE[i][0] / 4);
+        }
+        asm::store_eflags(eflags);
+    }
+    
+    pub fn init_screen(&mut self){
+        use Color::*;
+
+        let xsize = self.scrnx as isize;
+        let ysize = self.scrny as isize; 
+
+        self.boxfill8(DarkCyan, 0, 0, xsize - 1, ysize - 29);
+        self.boxfill8(LightGray, 0, ysize - 28, xsize - 1, ysize - 28);
+        self.boxfill8(White, 0, ysize - 27, xsize - 1, ysize - 27);
+        self.boxfill8(LightGray, 0, ysize - 26, xsize - 1, ysize - 1);
+
+        self.boxfill8(White, 3, ysize - 24, 59, ysize - 24);
+        self.boxfill8(White, 2, ysize - 24, 2, ysize - 4);
+        self.boxfill8(DarkYellow, 3, ysize - 4, 59, ysize - 4);
+        self.boxfill8(DarkYellow, 59, ysize - 23, 59, ysize - 5);
+        self.boxfill8(Black,  2, ysize -  3, 59, ysize - 3);
+        self.boxfill8(Black, 60, ysize - 24, 60, ysize - 3);
+
+        self.boxfill8(DarkGray, xsize - 47, ysize - 24, xsize - 4, ysize - 24);
+        self.boxfill8(DarkGray, xsize - 47, ysize - 23, xsize - 47, ysize - 4);
+        self.boxfill8(White, xsize - 47, ysize - 3, xsize - 4, ysize - 3);
+        self.boxfill8(White, xsize - 3, ysize - 24, xsize - 3, ysize - 3);
+    }
+
+    pub fn boxfill8(&mut self, color: Color, x0: isize, y0: isize, x1: isize, y1: isize) {
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let ptr = unsafe { &mut *((self.vram as *mut u8).offset(y * self.scrnx as isize + x))} ;
+                *ptr = color as u8;
+            }
+        }
+    }
+    pub fn print_char(&mut self, char: u8, color: Color, startx: isize, starty: isize) {
+        let font = FONTS[char as usize];
+        let color = color as u8;
+        let offset = startx + starty * self.scrnx as isize;
+        for y in 0..FONT_HEIGHT {
+            for x in 0..FONT_WIDTH {
+                if font[y][x] {
+                    let cell = (y * self.scrnx as usize + x) as isize;
+                    let ptr = unsafe { &mut *((self.vram as *mut u8).offset(cell + offset))};
+                    *ptr = color;
+                }
+            }
+        }
+    }
+        }
+    }
+}
+
+pub struct ScreenWriter {
+    initial_x: usize,
+    x: usize,
+    y: usize,
+    color: Color,
+    screen: Screen,
+}
+
+impl ScreenWriter {
+    pub fn new(screen: Screen, color: Color, x: usize, y: usize) -> ScreenWriter {
+        ScreenWriter {
+            initial_x: x,
+            x,
+            y,
+            color,
+            screen
+        }
+    }
+
+    fn newline(&mut self) {
+        self.x = self.initial_x;
+        self.y = self.y + FONT_HEIGHT;
+    }
+}
+
+impl fmt::Write for ScreenWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let str_bytes = s.as_bytes();
+        let height = self.screen.scrny as usize;
+        let width = self.screen.scrnx as usize;
+        for i in 0..str_bytes.len() {
+            if str_bytes[i] == b'\n'  {
+                self.newline();
+                return Ok(());
+            }
+            if self.x + FONT_WIDTH < width && self.y + FONT_HEIGHT < height {
+                self.screen
+                    .print_char(str_bytes[i], self.color, self.x as isize, self.y as isize);
+            } else if self.y + FONT_HEIGHT * 2 < height {
+                self.newline();
+                self.screen
+                    .print_char(str_bytes[i], self.color, self.x as isize, self.y as isize)
+            }
+
+            if self.x + FONT_WIDTH < width {
+                self.x = self.x + FONT_WIDTH;
+            } else if self.y + FONT_HEIGHT < height {
+                self.newline();
+            } else {
+                self.x = width;
+                self.y = height;
+            }
+        }
+        Ok(())
+    }
+}
+

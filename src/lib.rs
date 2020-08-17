@@ -7,6 +7,7 @@ use core::panic::PanicInfo;
 
 mod vga;
 mod asm;
+mod fonts;
 
 #[no_mangle]
 fn hlt() {
@@ -18,7 +19,15 @@ fn hlt() {
 #[no_mangle]
 #[start]
 pub extern "C" fn haribote_os() -> ! {
-    vga::set_palette();
+    use vga::{Screen, ScreenWriter};
+    let mut screen = Screen::new();
+    screen.init();
+
+    let mut writer = ScreenWriter::new(screen, vga::Color::White, 10, 10);
+    use core::fmt::Write;
+    write!(writer, "ABCDD123==\nabc\n").unwrap();
+    write!(writer, "afeaf afeia afeawfea afla aoijfeaf afjaifeaf").unwrap();
+
     loop {
         hlt()
     }
